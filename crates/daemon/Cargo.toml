@@ -1,0 +1,19 @@
+[package]
+name = "swarmd"
+description = "Daemon de swarm: es dueño de los procesos de las Terminales"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+swarm-ipc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+libc.workspace = true
+tokio = { version = "1", features = ["rt", "net", "io-util", "sync", "time", "macros", "signal"] }
+portable-pty = "0.9"
+vte = "0.15"
+notify-rust = "4"
+log = "0.4"
+env_logger = "0.11"

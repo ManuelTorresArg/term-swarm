@@ -1,0 +1,12 @@
+[package]
+name = "swarmctl"
+description = "CLI para manejar swarmd mientras no existe la app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+swarm-ipc.workspace = true
+anyhow.workspace = true
+libc.workspace = true
+clap = { version = "4", features = ["derive"] }
