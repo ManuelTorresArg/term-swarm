@@ -82,7 +82,7 @@ Cada Terminal está en un solo estado. Las señales que lo determinan son:
 - **V2.** Al abrir la app, si el daemon no está corriendo, la app lo arranca.
 - **V3.** Cerrar la ventana no afecta al daemon ni a las Terminales.
 - **V4.** Al reabrir la ventana, cada Terminal viva se reconecta. El daemon repite un buffer acotado con la salida cruda reciente y se fuerza un redimensionado para que los programas a pantalla completa se redibujen.
-- **V5.** Hay una acción **"Salir y cerrar todas las Terminales"**. Pide confirmación, mata todos los procesos y apaga el daemon.
+- **V5.** Hay una acción **"Salir y cerrar todas las Terminales"**. Pide confirmación, mata todos los procesos y apaga el daemon. La Estructura se conserva: al volver a abrir swarm, las Terminales se reabren con un shell nuevo, igual que después de un reinicio (V6).
 - **V6.** Después de un reinicio de la máquina (o si el daemon muere), se restaura la **Estructura**: Proyectos y Terminales con su directorio, Nombre y orden. Las Terminales se reabren con un shell nuevo y los procesos anteriores no se recuperan.
 
 ## 9. Plataforma

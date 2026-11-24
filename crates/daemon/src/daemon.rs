@@ -393,7 +393,7 @@ impl Daemon {
                 Some(m) => format!("{m}\n{}", self.nombre_grupo(proyecto)),
                 None => self.nombre_grupo(proyecto),
             };
-            self.notificador.enviar(resumen, cuerpo);
+            self.notificador.enviar(id, resumen, cuerpo);
         }
         if let Some(info) = info {
             self.difundir(Evento::TerminalActualizada(info));
@@ -417,7 +417,7 @@ impl Daemon {
                 "Código de salida {codigo} · {}",
                 self.nombre_grupo(proyecto)
             );
-            self.notificador.enviar(resumen, cuerpo);
+            self.notificador.enviar(id, resumen, cuerpo);
         }
         self.difundir(Evento::TerminalActualizada(info));
     }

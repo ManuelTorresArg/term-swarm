@@ -1,0 +1,50 @@
+.grupo {
+  font-weight: bold;
+}
+
+.indicador {
+  font-weight: bold;
+  min-width: 14px;
+}
+
+.activa {
+  color: #33d17a;
+}
+
+.quieta {
+  color: alpha(currentColor, 0.45);
+}
+
+.atencion {
+  color: #e5a50a;
+}
+
+.terminada {
+  color: #e01b24;
+}
+
+.terminada-ok {
+  color: alpha(currentColor, 0.55);
+}
+
+.destacada {
+  font-weight: bold;
+}
+
+row.fila-atencion {
+  background-color: alpha(#e5a50a, 0.18);
+}
+
+.contador {
+  background-color: #e5a50a;
+  color: #1e1e1e;
+  border-radius: 9px;
+  padding: 0 7px;
+  font-size: smaller;
+  font-weight: bold;
+}
+
+.barra-terminada {
+  background-color: alpha(#e01b24, 0.15);
+  padding: 4px 10px;
+}

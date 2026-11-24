@@ -111,6 +111,13 @@ impl Client {
         self.sender.clone()
     }
 
+    /// Para clientes con su propio loop (la app): entrega el Sender, los
+    /// Eventos ya encolados y el canal crudo, donde las Respuestas se
+    /// emparejan con el `req` que devuelve `Sender::enviar`.
+    pub fn en_partes(self) -> (Sender, Vec<Evento>, Receiver<MensajeServidor>) {
+        (self.sender, self.eventos.into(), self.rx)
+    }
+
     /// Manda un Pedido y espera su Respuesta. Los Eventos que lleguen mientras tanto quedan en cola.
     pub fn pedir(&mut self, pedido: Pedido) -> Result<Valor> {
         let req = self.sender.enviar(pedido)?;
