@@ -2,7 +2,7 @@
 //! aunque la ventana de swarm esté cerrada.
 //!
 //! Cada Terminal tiene a lo sumo una notificación viva: una nueva reemplaza
-//! a la anterior en vez de apilarse. Hacer clic lanza `swarm --mostrar <id>`;
+//! a la anterior en vez de apilarse. Hacer clic lanza `swarm-term --mostrar <id>`;
 //! como la app es de instancia única, eso enfoca la ventana existente.
 
 use std::collections::HashMap;
@@ -78,9 +78,9 @@ impl Notificador {
 fn mostrar_en_app(terminal: TerminalId) {
     let exe = std::env::current_exe()
         .ok()
-        .and_then(|e| Some(e.parent()?.join("swarm")))
+        .and_then(|e| Some(e.parent()?.join("swarm-term")))
         .filter(|p| p.is_file())
-        .unwrap_or_else(|| PathBuf::from("swarm"));
+        .unwrap_or_else(|| PathBuf::from("swarm-term"));
     match Command::new(&exe)
         .arg("--mostrar")
         .arg(terminal.to_string())

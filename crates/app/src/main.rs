@@ -17,7 +17,7 @@ use crate::ui::Ui;
 const APP_ID: &str = "dev.swarm.Swarm";
 
 fn main() -> glib::ExitCode {
-    // I1: una sola instancia. `swarm --mostrar <id>` (N3) se reenvía a la que ya corre.
+    // I1: una sola instancia. `swarm-term --mostrar <id>` (N3) se reenvía a la que ya corre.
     let app = gtk::Application::builder()
         .application_id(APP_ID)
         .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)

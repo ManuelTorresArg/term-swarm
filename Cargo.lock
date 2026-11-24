@@ -1271,19 +1271,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
-name = "swarm"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "async-channel",
- "gtk4",
- "swarm-ipc",
- "vte4",
-]
-
-[[package]]
 name = "swarm-ipc"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "base64",
@@ -1293,8 +1282,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "swarm-term"
+version = "0.1.2"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "gtk4",
+ "swarm-ipc",
+ "vte4",
+]
+
+[[package]]
 name = "swarmctl"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -1304,7 +1304,7 @@ dependencies = [
 
 [[package]]
 name = "swarmd"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "env_logger",

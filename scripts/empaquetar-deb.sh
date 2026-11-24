@@ -4,11 +4,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# cargo-deb solo compila el paquete `swarm`; los otros binarios los compilamos antes.
+# cargo-deb solo compila el paquete `swarm-term` (la app); los otros binarios los compilamos antes.
 cargo build --release --workspace --bins
-cargo deb -p swarm --no-build "$@"
+cargo deb -p swarm-term --no-build "$@"
 
-deb=$(ls -t target/debian/swarm_*.deb | head -1)
+deb=$(ls -t target/debian/swarm-term_*.deb | head -1)
 echo
 echo "Listo: $deb"
-echo "Instalar con: sudo apt install ./$deb"
+echo "Instalar con: sudo apt install $PWD/$deb"

@@ -145,7 +145,7 @@ impl Ui {
         self.ventana.present();
     }
 
-    /// `swarm --mostrar <id>` (N3).
+    /// `swarm-term --mostrar <id>` (N3).
     pub fn pedir_mostrar(self: &Rc<Self>, id: TerminalId) {
         if self.st.borrow().cargada {
             self.mostrar(id);

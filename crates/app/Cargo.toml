@@ -1,5 +1,5 @@
 [package]
-name = "swarm"
+name = "swarm-term"
 description = "App de escritorio de swarm"
 version.workspace = true
 edition.workspace = true
@@ -13,7 +13,7 @@ vte = { package = "vte4", version = "0.10", features = ["v0_80"] }
 async-channel = "2"
 
 [package.metadata.deb]
-name = "swarm"
+name = "swarm-term"
 maintainer = "Manuel <manuel.torres@genuinesolutions.mx>"
 copyright = "2026, Manuel"
 extended-description = """\
@@ -26,10 +26,10 @@ priority = "optional"
 # $auto deja que dpkg-shlibdeps calcule las librerías (GTK4, VTE, ...).
 depends = "$auto"
 assets = [
-    ["target/release/swarm", "usr/bin/", "755"],
+    ["target/release/swarm-term", "usr/bin/", "755"],
     ["target/release/swarmd", "usr/bin/", "755"],
     ["target/release/swarmctl", "usr/bin/", "755"],
     ["../../data/dev.swarm.Swarm.desktop", "usr/share/applications/", "644"],
     ["../../data/dev.swarm.Swarm.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
-    ["../../docs/spec-v1.md", "usr/share/doc/swarm/", "644"],
+    ["../../docs/spec-v1.md", "usr/share/doc/swarm-term/", "644"],
 ]
