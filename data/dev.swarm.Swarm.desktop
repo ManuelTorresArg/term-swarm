@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=swarm
+GenericName=Terminales para agentes
+Comment=Muchas terminales agrupadas por proyecto, sin perder de vista cuál necesita atención
+Exec=swarm
+Icon=dev.swarm.Swarm
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=terminal;agentes;shell;proyectos;
+StartupNotify=true
+StartupWMClass=dev.swarm.Swarm

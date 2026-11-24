@@ -39,7 +39,9 @@ impl Notificador {
             n.appname("swarm")
                 .summary(&resumen)
                 .body(&cuerpo)
-                .icon("utilities-terminal")
+                .icon("dev.swarm.Swarm")
+                // Así GNOME la asocia con la app instalada (nombre e ícono).
+                .hint(notify_rust::Hint::DesktopEntry("dev.swarm.Swarm".into()))
                 .action("default", "Mostrar");
             let previa = vivas.lock().unwrap().get(&terminal).copied();
             if let Some(id) = previa {

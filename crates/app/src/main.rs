@@ -22,6 +22,7 @@ fn main() -> glib::ExitCode {
         .application_id(APP_ID)
         .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
         .build();
+    app.connect_startup(|_| gtk::Window::set_default_icon_name(APP_ID));
     let ui: Rc<RefCell<Option<Rc<Ui>>>> = Rc::default();
 
     app.connect_command_line(move |app, linea| {

@@ -11,3 +11,25 @@ anyhow.workspace = true
 gtk = { package = "gtk4", version = "0.11", features = ["v4_14"] }
 vte = { package = "vte4", version = "0.10", features = ["v0_80"] }
 async-channel = "2"
+
+[package.metadata.deb]
+name = "swarm"
+maintainer = "Manuel <manuel.torres@genuinesolutions.mx>"
+copyright = "2026, Manuel"
+extended-description = """\
+Herramienta de escritorio para tener muchas terminales abiertas, agrupadas \
+por proyecto, donde correr agentes de desarrollo sin perder de vista cuál \
+necesita atención. Un daemon (swarmd) mantiene vivos los procesos aunque \
+la ventana esté cerrada."""
+section = "utils"
+priority = "optional"
+# $auto deja que dpkg-shlibdeps calcule las librerías (GTK4, VTE, ...).
+depends = "$auto"
+assets = [
+    ["target/release/swarm", "usr/bin/", "755"],
+    ["target/release/swarmd", "usr/bin/", "755"],
+    ["target/release/swarmctl", "usr/bin/", "755"],
+    ["../../data/dev.swarm.Swarm.desktop", "usr/share/applications/", "644"],
+    ["../../data/dev.swarm.Swarm.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+    ["../../docs/spec-v1.md", "usr/share/doc/swarm/", "644"],
+]
