@@ -37,6 +37,18 @@ enum Comando {
     Cerrar { id: u64 },
     /// Pone o borra el Nombre de una Terminal.
     Renombrar { id: u64, nombre: Option<String> },
+    /// Pone o borra la Reanudación: el comando que se escribe al reabrir la
+    /// Terminal después de un reinicio. Sin --id usa la Terminal actual
+    /// ($SWARM_TERMINAL); fuera de swarm no hace nada, así sirve en hooks.
+    Reanudacion {
+        #[arg(long)]
+        id: Option<u64>,
+        /// Borra la Reanudación.
+        #[arg(long, conflicts_with = "comando")]
+        borrar: bool,
+        #[arg(required_unless_present = "borrar")]
+        comando: Option<String>,
+    },
     /// Mueve una Terminal a una posición dentro de su grupo.
     Mover { id: u64, posicion: usize },
     /// Se adjunta a una Terminal. Ctrl+] para soltarla.
@@ -55,6 +67,30 @@ fn main() -> Result<()> {
             return Ok(());
         };
         c.pedir(Pedido::Apagar)?;
+        return Ok(());
+    }
+
+    if let Comando::Reanudacion {
+        id,
+        borrar,
+        comando,
+    } = cli.cmd
+    {
+        let id = match id {
+            Some(id) => id,
+            None => match std::env::var("SWARM_TERMINAL")
+                .ok()
+                .and_then(|v| v.parse().ok())
+            {
+                Some(id) => id,
+                // Fuera de una Terminal de swarm: no hay nada que hacer.
+                None => return Ok(()),
+            },
+        };
+        let comando = if borrar { None } else { comando };
+        // No arranca el daemon: si no está, no hay Terminal a la que asignarla.
+        let mut c = Client::conectar()?;
+        c.pedir(Pedido::FijarReanudacion { id, comando })?;
         return Ok(());
     }
 
@@ -101,7 +137,7 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Comando::Apagar => unreachable!(),
+        Comando::Apagar | Comando::Reanudacion { .. } => unreachable!(),
     }
     Ok(())
 }
@@ -153,6 +189,9 @@ fn imprimir(i: &Instantanea) {
                 (None, None) => String::new(),
             };
             println!("  {:>4}  {estado:<20} {rotulo}", t.id);
+            if let Some(r) = &t.reanudacion {
+                println!("        ↻ {r}");
+            }
         }
     }
 }

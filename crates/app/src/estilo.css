@@ -48,3 +48,17 @@ row.fila-atencion {
   background-color: alpha(#e01b24, 0.15);
   padding: 4px 10px;
 }
+
+/* Disposiciones con varias Terminales a la vez. */
+.cabecera {
+  padding: 2px 8px;
+  font-size: smaller;
+  background-color: alpha(currentColor, 0.08);
+  color: alpha(currentColor, 0.7);
+}
+
+.vista.enfocada .cabecera {
+  background-color: @theme_selected_bg_color;
+  color: @theme_selected_fg_color;
+  font-weight: bold;
+}

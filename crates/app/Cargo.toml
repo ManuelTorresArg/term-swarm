@@ -32,4 +32,5 @@ assets = [
     ["../../data/dev.swarm.Swarm.desktop", "usr/share/applications/", "644"],
     ["../../data/dev.swarm.Swarm.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
     ["../../docs/spec-v1.md", "usr/share/doc/swarm-term/", "644"],
+    ["../../docs/reanudacion-claude-code.md", "usr/share/doc/swarm-term/", "644"],
 ]

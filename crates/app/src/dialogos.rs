@@ -2,7 +2,13 @@ use gtk::prelude::*;
 use gtk::{gio, glib};
 
 /// Pide confirmación; `si` corre solo si el usuario elige `accion`.
-pub fn confirmar(padre: &impl IsA<gtk::Window>, mensaje: &str, detalle: &str, accion: &str, si: impl FnOnce() + 'static) {
+pub fn confirmar(
+    padre: &impl IsA<gtk::Window>,
+    mensaje: &str,
+    detalle: &str,
+    accion: &str,
+    si: impl FnOnce() + 'static,
+) {
     let d = gtk::AlertDialog::builder()
         .message(mensaje)
         .detail(detalle)
@@ -18,7 +24,12 @@ pub fn confirmar(padre: &impl IsA<gtk::Window>, mensaje: &str, detalle: &str, ac
     });
 }
 
-pub fn avisar(padre: Option<&gtk::Window>, mensaje: &str, detalle: &str, despues: impl FnOnce() + 'static) {
+pub fn avisar(
+    padre: Option<&gtk::Window>,
+    mensaje: &str,
+    detalle: &str,
+    despues: impl FnOnce() + 'static,
+) {
     let d = gtk::AlertDialog::builder()
         .message(mensaje)
         .detail(detalle)
@@ -44,7 +55,10 @@ pub fn pedir_texto(
         .default_width(360)
         .build();
 
-    let entrada = gtk::Entry::builder().text(inicial).activates_default(true).build();
+    let entrada = gtk::Entry::builder()
+        .text(inicial)
+        .activates_default(true)
+        .build();
     let cancelar = gtk::Button::with_label("Cancelar");
     let aceptar = gtk::Button::with_label(boton);
     aceptar.add_css_class("suggested-action");
@@ -59,7 +73,14 @@ pub fn pedir_texto(
     caja.set_margin_bottom(18);
     caja.set_margin_start(18);
     caja.set_margin_end(18);
-    caja.append(&gtk::Label::builder().label(etiqueta).xalign(0.0).build());
+    caja.append(
+        &gtk::Label::builder()
+            .label(etiqueta)
+            .xalign(0.0)
+            .wrap(true)
+            .max_width_chars(48)
+            .build(),
+    );
     caja.append(&entrada);
     caja.append(&botones);
     ventana.set_child(Some(&caja));

@@ -14,7 +14,7 @@ Vocabulario: ver [GLOSSARY.md](../GLOSSARY.md). Decisiones de arquitectura: ver 
 - Solo máquina local.
 
 **Fuera de la v1**
-- Splits y tabs.
+- Splits manuales y tabs (sí hay Disposiciones automáticas, I7).
 - Comandos predefinidos por Proyecto.
 - Integraciones específicas por agente (hooks, parseo de salida). Ver ADR 0002.
 - Máquinas remotas, SSH y devcontainers.
@@ -32,7 +32,7 @@ Vocabulario: ver [GLOSSARY.md](../GLOSSARY.md). Decisiones de arquitectura: ver 
 
 ## 3. Terminales
 
-- **T1.** Una Terminal nueva abre el shell por defecto del usuario, en el directorio del Proyecto o en `~` si es Suelta. Swarm no lanza ningún otro comando.
+- **T1.** Una Terminal nueva abre el shell por defecto del usuario, en el directorio del Proyecto o en `~` si es Suelta. Swarm no lanza ningún otro comando (la única excepción es la Reanudación al reabrir, R2).
 - **T2.** Una Terminal se comporta como una terminal común: swarm no interpreta ni modifica lo que pasa adentro.
 - **T3.** Una Terminal tiene un **Nombre** opcional, que pone el usuario y se puede editar.
 - **T4.** El **Título** de una Terminal es el que el programa declara con OSC 0/2.
@@ -52,7 +52,7 @@ Cada Terminal está en un solo estado. Las señales que lo determinan son:
 | **Terminada** | El proceso salió (se registra el código de salida) | Nunca: queda así hasta que se cierra la Terminal |
 
 - **E1.** Pide atención es pegajoso: la salida nueva no lo despeja, solo lo despeja Mirar.
-- **E2.** **Mirar** una Terminal es tenerla visible *con la ventana de swarm enfocada*. Si está visible pero la ventana no tiene foco, no cuenta como mirada.
+- **E2.** **Mirar** una Terminal es tenerla visible *con la ventana de swarm enfocada*. Si está visible pero la ventana no tiene foco, no cuenta como mirada. Con varias Terminales en pantalla (I7), solo se Mira la que tiene el foco del teclado.
 - **E3.** Si un proceso que Pide atención termina, la Terminal pasa a Terminada.
 - **E4.** El umbral de 20 s es fijo y no se puede configurar en la v1.
 - **E5.** Una Terminada que todavía no se Miró desde que terminó cuenta como "Terminada sin mirar". Se usa en N1 y A1.
@@ -66,11 +66,12 @@ Cada Terminal está en un solo estado. Las señales que lo determinan son:
 ## 6. Interfaz
 
 - **I1.** Swarm tiene una sola ventana. Si se abre de nuevo, se enfoca la existente.
-- **I2.** La ventana tiene un **sidebar** a la izquierda con los Proyectos (y Sueltas) y sus Terminales, y a la derecha **una sola Terminal visible** a la vez.
+- **I2.** La ventana tiene un **sidebar** a la izquierda con los Proyectos (y Sueltas) y sus Terminales, y a la derecha la Terminal visible; por defecto **una sola** a la vez (ver I7).
 - **I3.** Cada Terminal en el sidebar muestra el indicador de su estado y su Nombre en la línea principal, con el Título abajo y más chico. Si no tiene Nombre, muestra solo el Título. Si es Terminada, muestra también su código de salida.
 - **I4.** Los Proyectos se pueden colapsar. Un Proyecto colapsado muestra un contador de las Terminales que Piden atención o están Terminadas sin mirar.
 - **I5.** Las Terminales tienen **posición estable**: el orden es el de creación y el usuario lo puede reordenar a mano. El orden nunca cambia solo por el estado.
 - **I6.** Una Terminal Terminada sigue mostrando su última salida hasta que se cierra.
+- **I7.** Cada Proyecto (y Sueltas) tiene una **Disposición**: *Una sola* (por defecto), *Mosaico*, *Columnas*, *Filas* o *Principal y pila*. Salvo *Una sola*, muestra a la vez todas las Terminales abiertas del grupo, en el orden del sidebar (I5) y con su Nombre o Título arriba. En *Principal y pila* la grande es la última elegida desde el sidebar o un atajo. Se elige desde la barra (o `Ctrl+Shift+M` alterna entre *Una sola* y *Mosaico*), vale para el grupo de la Terminal visible y no sobrevive a cerrar la app.
 
 ## 7. Atajos
 
@@ -83,7 +84,15 @@ Cada Terminal está en un solo estado. Las señales que lo determinan son:
 - **V3.** Cerrar la ventana no afecta al daemon ni a las Terminales.
 - **V4.** Al reabrir la ventana, cada Terminal viva se reconecta. El daemon repite un buffer acotado con la salida cruda reciente y se fuerza un redimensionado para que los programas a pantalla completa se redibujen.
 - **V5.** Hay una acción **"Salir y cerrar todas las Terminales"**. Pide confirmación, mata todos los procesos y apaga el daemon. La Estructura se conserva: al volver a abrir swarm, las Terminales se reabren con un shell nuevo, igual que después de un reinicio (V6).
-- **V6.** Después de un reinicio de la máquina (o si el daemon muere), se restaura la **Estructura**: Proyectos y Terminales con su directorio, Nombre y orden. Las Terminales se reabren con un shell nuevo y los procesos anteriores no se recuperan.
+- **V6.** Después de un reinicio de la máquina (o si el daemon muere), se restaura la **Estructura**: Proyectos y Terminales con su directorio, Nombre y orden. Las Terminales se reabren con un shell nuevo y los procesos anteriores no se recuperan, salvo lo que retome su Reanudación (R1–R5).
+
+### Reanudación
+
+- **R1.** Una Terminal tiene una **Reanudación** opcional: un comando de una sola línea que forma parte de la Estructura. Swarm no interpreta su contenido.
+- **R2.** Cuando una Terminal se reabre (V5, V6), swarm abre el shell normal y escribe la Reanudación seguida de Enter, como si la tipeara el usuario, en cuanto el shell muestra algo (o a los 3 s). Al salir ese programa queda el shell en el directorio de la Terminal. Crear una Terminal nueva nunca usa una Reanudación.
+- **R3.** La Reanudación la puede fijar el programa que corre en la Terminal con `swarmctl reanudacion "<comando>"`, que usa `$SWARM_TERMINAL`; fuera de swarm no hace nada. Así un agente la mantiene al día con sus propios hooks (ver `docs/reanudacion-claude-code.md`).
+- **R4.** El usuario puede verla, corregirla o borrarla desde el menú de la Terminal ("Reanudación…"). El programa la borra con `swarmctl reanudacion --borrar` cuando termina a propósito, para que el próximo reinicio no lo vuelva a abrir.
+- **R5.** El sidebar marca las Terminales que tienen Reanudación; el tooltip muestra el comando.
 
 ## 9. Plataforma
 

@@ -12,6 +12,10 @@ _Avoid_: Workspace, grupo, repo
 Una terminal común y corriente, con su proceso, que swarm mantiene viva y vigila. Es la única unidad de trabajo: a swarm no le importa qué programa corre adentro.
 _Avoid_: Sesión, agente, tab, pane
 
+**Disposición**:
+Cómo se acomodan en la ventana las Terminales de un Proyecto (o de Sueltas): una sola, o todas a la vez en mosaico, columnas, filas o principal y pila. Es una preferencia de la ventana, no parte de la Estructura.
+_Avoid_: Layout, split, tiling
+
 **Sueltas**:
 La agrupación implícita de las Terminales que no pertenecen a ningún Proyecto.
 _Avoid_: Scratch, sin proyecto, default
@@ -41,12 +45,16 @@ _Avoid_: Resumen, label
 Etiqueta opcional que el usuario le pone a una Terminal para expresar su intención. Es distinta del Título: el Nombre lo pone el usuario y el Título lo declara el programa.
 _Avoid_: Alias, label
 
+**Reanudación**:
+Comando opcional de una Terminal que swarm escribe en su shell cuando la reabre después de un reinicio, para retomar lo que corría ahí (por ejemplo, la sesión de un agente). Lo guarda el usuario o el propio programa; swarm no sabe qué significa.
+_Avoid_: Restore, script de inicio, comando de arranque
+
 **Mirar**:
-Tener una Terminal visible con la ventana de swarm enfocada. Es lo único que despeja Pide atención.
+Tener una Terminal visible con la ventana de swarm enfocada. Si hay varias en pantalla, solo se Mira la que tiene el foco del teclado. Es lo único que despeja Pide atención.
 _Avoid_: Ver, seleccionar, abrir
 
 ## Ciclo de vida
 
 **Estructura**:
-El conjunto de Proyectos y Terminales (con su directorio y nombre), sin los procesos. Es lo único que sobrevive a un reinicio de la máquina.
+El conjunto de Proyectos y Terminales (con su directorio, Nombre y Reanudación), sin los procesos. Es lo único que sobrevive a un reinicio de la máquina.
 _Avoid_: Layout, workspace

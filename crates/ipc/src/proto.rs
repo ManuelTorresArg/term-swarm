@@ -6,7 +6,7 @@ pub type ProyectoId = u64;
 pub type TerminalId = u64;
 
 /// Versión del protocolo; cambia cuando un mensaje cambia de forma incompatible.
-pub const VERSION_PROTOCOLO: u32 = 1;
+pub const VERSION_PROTOCOLO: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Proyecto {
@@ -35,6 +35,9 @@ pub struct Terminal {
     pub estado: Estado,
     /// Terminada y todavía no Mirada desde que terminó.
     pub terminada_sin_mirar: bool,
+    /// Comando que se escribe en el shell al reabrir la Terminal (R1).
+    #[serde(default)]
+    pub reanudacion: Option<String>,
 }
 
 /// La Estructura completa más el estado vivo de cada Terminal.
@@ -71,6 +74,11 @@ pub enum Pedido {
     RenombrarTerminal {
         id: TerminalId,
         nombre: Option<String>,
+    },
+    /// Pone o borra la Reanudación de una Terminal (R1–R4).
+    FijarReanudacion {
+        id: TerminalId,
+        comando: Option<String>,
     },
     /// Posición dentro de su grupo (Proyecto o Sueltas).
     MoverTerminal {

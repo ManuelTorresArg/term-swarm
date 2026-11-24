@@ -23,6 +23,9 @@ pub type ClienteId = u64;
 const BUFFER_REPETICION: usize = 1024 * 1024;
 /// Tiempo sin salida para pasar de Activa a Quieta (E4).
 const UMBRAL_QUIETA: Duration = Duration::from_secs(20);
+/// Si el shell reabierto no escribió nada en este tiempo, la Reanudación se
+/// escribe igual (R2).
+const ESPERA_REANUDACION: Duration = Duration::from_secs(3);
 
 pub enum Cmd {
     Conectar {
@@ -63,6 +66,9 @@ struct Term {
     cwd: PathBuf,
     estado: Estado,
     terminada_sin_mirar: bool,
+    reanudacion: Option<String>,
+    /// Reanudación a escribir en cuanto el shell reabierto muestre algo (R2).
+    reanudar_pendiente: Option<(String, Instant)>,
     ultima_salida: Instant,
     buffer: VecDeque<u8>,
     detector: Detector,
@@ -80,6 +86,7 @@ impl Term {
             cwd: self.cwd.clone(),
             estado: self.estado,
             terminada_sin_mirar: self.terminada_sin_mirar,
+            reanudacion: self.reanudacion.clone(),
         }
     }
 
@@ -88,6 +95,17 @@ impl Term {
             Estado::Quieta
         } else {
             Estado::Activa
+        }
+    }
+
+    /// Escribe la Reanudación pendiente en el shell, como si la tipeara el usuario (R2).
+    fn reanudar(&mut self) {
+        let Some((comando, _)) = self.reanudar_pendiente.take() else {
+            return;
+        };
+        if let Some(p) = &self.proceso {
+            log::info!("terminal {}: reanudando con {comando:?}", self.id);
+            p.escribir(format!("{comando}\r").into_bytes());
         }
     }
 
@@ -113,7 +131,8 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    /// Carga la Estructura y reabre cada Terminal con un shell nuevo (V6).
+    /// Carga la Estructura y reabre cada Terminal con un shell nuevo (V6),
+    /// escribiendo su Reanudación si tiene (R2).
     pub fn nuevo(tx: mpsc::Sender<Cmd>, state_dir: &Path) -> Self {
         let ruta_estructura = state_dir.join("estructura.json");
         let g = estructura::cargar(&ruta_estructura);
@@ -136,8 +155,10 @@ impl Daemon {
         };
         for t in g.terminales {
             let cwd = if t.cwd.is_dir() { t.cwd } else { paths::home() };
-            d.terminales
-                .push(d.abrir(t.id, t.proyecto, t.nombre, cwd, 80, 24));
+            let mut term = d.abrir(t.id, t.proyecto, t.nombre, cwd, 80, 24);
+            term.reanudar_pendiente = t.reanudacion.clone().map(|c| (c, Instant::now()));
+            term.reanudacion = t.reanudacion;
+            d.terminales.push(term);
             d.proximo_id = d.proximo_id.max(t.id + 1);
         }
         log::info!(
@@ -256,6 +277,20 @@ impl Daemon {
                 self.estructura_cambio();
                 Ok(Valor::Nada)
             }
+            Pedido::FijarReanudacion { id, comando } => {
+                let comando = comando
+                    .map(|c| c.trim().to_string())
+                    .filter(|c| !c.is_empty());
+                if comando
+                    .as_deref()
+                    .is_some_and(|c| c.chars().any(char::is_control))
+                {
+                    bail!("la Reanudación tiene que ser un comando de una sola línea");
+                }
+                self.term_mut(id)?.reanudacion = comando;
+                self.estructura_cambio();
+                Ok(Valor::Nada)
+            }
             Pedido::MoverTerminal { id, posicion } => {
                 let desde = self.indice(id)?;
                 let t = self.terminales.remove(desde);
@@ -354,6 +389,8 @@ impl Daemon {
             t.buffer.drain(..sobra);
         }
         t.ultima_salida = Instant::now();
+        // El shell ya mostró algo (el prompt o lo que imprima al arrancar).
+        t.reanudar();
 
         let senales = t.detector.procesar(&datos);
         let antes = (t.estado, t.titulo.clone());
@@ -423,6 +460,14 @@ impl Daemon {
     }
 
     fn tick(&mut self) {
+        for t in &mut self.terminales {
+            if t.reanudar_pendiente
+                .as_ref()
+                .is_some_and(|(_, desde)| desde.elapsed() >= ESPERA_REANUDACION)
+            {
+                t.reanudar();
+            }
+        }
         let umbral = self.umbral_quieta;
         let pasaron: Vec<Terminal> = self
             .terminales
@@ -486,6 +531,8 @@ impl Daemon {
                 Estado::Terminada { codigo: 127 }
             },
             terminada_sin_mirar: proceso.is_none(),
+            reanudacion: None,
+            reanudar_pendiente: None,
             cwd,
             ultima_salida: Instant::now(),
             buffer: VecDeque::new(),
@@ -592,6 +639,7 @@ impl Daemon {
                     proyecto: t.proyecto,
                     nombre: t.nombre.clone(),
                     cwd: t.cwd.clone(),
+                    reanudacion: t.reanudacion.clone(),
                 })
                 .collect(),
         };

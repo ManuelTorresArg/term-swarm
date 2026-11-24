@@ -22,6 +22,8 @@ pub struct TerminalGuardada {
     pub proyecto: Option<ProyectoId>,
     pub nombre: Option<String>,
     pub cwd: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reanudacion: Option<String>,
 }
 
 /// Carga la Estructura. Si el archivo no existe arranca vacía; si está
@@ -85,6 +87,7 @@ mod tests {
                 proyecto: Some(1),
                 nombre: None,
                 cwd: "/tmp".into(),
+                reanudacion: Some("claude --resume abc".into()),
             }],
         };
         guardar(&ruta, &g).unwrap();

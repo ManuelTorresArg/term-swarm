@@ -51,10 +51,15 @@ fn main() -> glib::ExitCode {
                 Err(e) => {
                     let app = app.clone();
                     let guarda = app.hold();
-                    dialogos::avisar(None, "No se pudo conectar con swarmd", &format!("{e:#}"), move || {
-                        drop(guarda);
-                        app.quit();
-                    });
+                    dialogos::avisar(
+                        None,
+                        "No se pudo conectar con swarmd",
+                        &format!("{e:#}"),
+                        move || {
+                            drop(guarda);
+                            app.quit();
+                        },
+                    );
                     return glib::ExitCode::FAILURE;
                 }
             },

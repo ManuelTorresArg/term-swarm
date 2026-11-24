@@ -7,9 +7,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gtk::prelude::*;
-use vte::prelude::*;
 use gtk::{gio, glib};
 use swarm_ipc::{Estado, Evento, Instantanea, Pedido, ProyectoId, Terminal, TerminalId, Valor};
+use vte::prelude::*;
 
 use crate::conexion::{Conexion, Recepcion};
 use crate::dialogos;
@@ -19,6 +19,47 @@ use crate::vista::Vista;
 type Grupo = Option<ProyectoId>;
 
 type AccionTerminal = fn(&Rc<Ui>, TerminalId);
+
+/// Cómo se acomodan en la ventana las Terminales del grupo visible.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+enum Disposicion {
+    /// Una sola Terminal visible (I2).
+    #[default]
+    Una,
+    /// Grilla lo más cuadrada posible.
+    Mosaico,
+    /// Todas lado a lado.
+    Columnas,
+    /// Todas una debajo de otra.
+    Filas,
+    /// La elegida grande a la izquierda y el resto apiladas a la derecha.
+    Principal,
+}
+
+impl Disposicion {
+    const TODAS: [(Disposicion, &'static str, &'static str); 5] = [
+        (Disposicion::Una, "una", "Una sola"),
+        (Disposicion::Mosaico, "mosaico", "Mosaico"),
+        (Disposicion::Columnas, "columnas", "Columnas"),
+        (Disposicion::Filas, "filas", "Filas"),
+        (Disposicion::Principal, "principal", "Principal y pila"),
+    ];
+
+    fn id(self) -> &'static str {
+        Self::TODAS
+            .iter()
+            .find(|(d, ..)| *d == self)
+            .map(|(_, id, _)| *id)
+            .unwrap_or("una")
+    }
+
+    fn de_id(id: &str) -> Option<Self> {
+        Self::TODAS
+            .iter()
+            .find(|(_, i, _)| *i == id)
+            .map(|(d, ..)| *d)
+    }
+}
 
 enum Fila {
     Grupo(Grupo),
@@ -30,6 +71,8 @@ struct FilaTerminal {
     indicador: gtk::Label,
     linea1: gtk::Label,
     linea2: gtk::Label,
+    /// R5: marca de que la Terminal tiene Reanudación.
+    reanudacion: gtk::Image,
 }
 
 #[derive(Default)]
@@ -41,7 +84,14 @@ struct Estado_ {
     filas_terminal: HashMap<TerminalId, FilaTerminal>,
     contadores: HashMap<Grupo, gtk::Label>,
     vistas: HashMap<TerminalId, Rc<Vista>>,
+    /// La Terminal con el foco: la que se Mira cuando la ventana está enfocada.
     visible: Option<TerminalId>,
+    /// Disposición elegida para cada grupo; los que no están usan `Una`.
+    disposiciones: HashMap<Grupo, Disposicion>,
+    /// La Terminal grande en `Principal`: la última elegida desde el sidebar o un atajo.
+    principal: Option<TerminalId>,
+    /// Lo que está armado en el área ahora (disposición y Terminales en orden).
+    compuesto: Option<(Disposicion, Vec<TerminalId>)>,
     /// Último `Mirando` enviado al daemon.
     mirando: Option<Option<TerminalId>>,
     /// Mientras se reconstruye el sidebar, ignorar `row-selected`.
@@ -58,6 +108,8 @@ pub struct Ui {
     conexion: Rc<Conexion>,
     lista: gtk::ListBox,
     pila: gtk::Stack,
+    /// Página de `pila` donde se acomodan las Vistas.
+    area: gtk::Box,
     st: RefCell<Estado_>,
 }
 
@@ -87,6 +139,8 @@ impl Ui {
         vacio.set_justify(gtk::Justification::Center);
         vacio.add_css_class("dim-label");
         pila.add_named(&vacio, Some("vacio"));
+        let area = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        pila.add_named(&area, Some("area"));
 
         let paned = gtk::Paned::new(gtk::Orientation::Horizontal);
         paned.set_start_child(Some(&lateral));
@@ -102,6 +156,7 @@ impl Ui {
             conexion: conexion.clone(),
             lista,
             pila,
+            area,
             st: RefCell::default(),
         });
         ui.armar_barra();
@@ -190,6 +245,17 @@ impl Ui {
                 ui.salir_y_cerrar_todo();
             }
         ));
+        let disposiciones = gio::Menu::new();
+        for (_, id, texto) in Disposicion::TODAS {
+            disposiciones.append(Some(texto), Some(&format!("win.disposicion::{id}")));
+        }
+        let boton_disposicion = gtk::MenuButton::new();
+        boton_disposicion.set_icon_name("view-grid-symbolic");
+        boton_disposicion.set_tooltip_text(Some(
+            "Disposición de las Terminales del Proyecto (Ctrl+Shift+M alterna el mosaico)",
+        ));
+        boton_disposicion.set_menu_model(Some(&disposiciones));
+
         let boton_menu = gtk::MenuButton::new();
         boton_menu.set_icon_name("open-menu-symbolic");
         boton_menu.set_popover(Some(&menu));
@@ -198,6 +264,7 @@ impl Ui {
         barra.pack_start(&terminal);
         barra.pack_start(&atencion);
         barra.pack_end(&boton_menu);
+        barra.pack_end(&boton_disposicion);
         self.ventana.set_titlebar(Some(&barra));
     }
 
@@ -210,12 +277,38 @@ impl Ui {
                 move |_, _| f(&ui)
             ));
             self.ventana.add_action(&a);
-            self.app.set_accels_for_action(&format!("win.{nombre}"), teclas);
+            self.app
+                .set_accels_for_action(&format!("win.{nombre}"), teclas);
         };
-        accion("siguiente-atencion", &["<Control><Shift>a"], |ui| ui.siguiente_atencion());
+        accion("siguiente-atencion", &["<Control><Shift>a"], |ui| {
+            ui.siguiente_atencion()
+        });
         accion("nueva-terminal", &["<Control><Shift>t"], |ui| {
             let g = ui.grupo_actual();
             ui.nueva_terminal(g)
+        });
+        let disposicion = gio::SimpleAction::new_stateful(
+            "disposicion",
+            Some(glib::VariantTy::STRING),
+            &"una".to_variant(),
+        );
+        disposicion.set_enabled(false);
+        disposicion.connect_change_state(glib::clone!(
+            #[weak(rename_to = ui)]
+            self,
+            move |_, v| {
+                if let Some(d) = v.and_then(|v| v.str()).and_then(Disposicion::de_id) {
+                    ui.fijar_disposicion(d);
+                }
+            }
+        ));
+        self.ventana.add_action(&disposicion);
+        accion("alternar-mosaico", &["<Control><Shift>m"], |ui| {
+            let d = match ui.disposicion_actual() {
+                Disposicion::Una => Disposicion::Mosaico,
+                _ => Disposicion::Una,
+            };
+            ui.fijar_disposicion(d);
         });
         accion("siguiente", &["<Control>Page_Down"], |ui| ui.saltar(1));
         accion("anterior", &["<Control>Page_Up"], |ui| ui.saltar(-1));
@@ -328,21 +421,28 @@ impl Ui {
         let quitadas: Vec<Rc<Vista>> = {
             let mut st = self.st.borrow_mut();
             let vivas: HashSet<TerminalId> = inst.terminales.iter().map(|t| t.id).collect();
-            let ids: Vec<TerminalId> = st.vistas.keys().copied().filter(|id| !vivas.contains(id)).collect();
+            let ids: Vec<TerminalId> = st
+                .vistas
+                .keys()
+                .copied()
+                .filter(|id| !vivas.contains(id))
+                .collect();
             let quitadas = ids.iter().filter_map(|id| st.vistas.remove(id)).collect();
             if st.visible.is_some_and(|v| !vivas.contains(&v)) {
-                st.visible = None;
+                // Si compartía la ventana con otras, el foco pasa a una de ellas.
+                st.visible = st
+                    .compuesto
+                    .as_ref()
+                    .and_then(|(_, ids)| ids.iter().copied().find(|id| vivas.contains(id)));
             }
             let proyectos: HashSet<Grupo> = inst.proyectos.iter().map(|p| Some(p.id)).collect();
-            st.colapsados.retain(|g| g.is_none() || proyectos.contains(g));
+            st.colapsados
+                .retain(|g| g.is_none() || proyectos.contains(g));
             st.inst = inst;
             quitadas
         };
         for v in quitadas {
-            self.pila.remove(&v.raiz);
-        }
-        if self.st.borrow().visible.is_none() {
-            self.pila.set_visible_child_name("vacio");
+            soltar(v.raiz.upcast_ref());
         }
         // Las vistas existentes pueden haber cambiado de estado mientras no había ventana.
         let pares: Vec<(Rc<Vista>, Terminal)> = {
@@ -357,6 +457,8 @@ impl Ui {
             v.actualizar(&t);
         }
         self.reconstruir_lista();
+        // Puede haber cambiado qué Terminales tiene el grupo visible, o su orden.
+        self.componer();
         self.actualizar_mirando();
     }
 
@@ -431,13 +533,20 @@ impl Ui {
             for g in st.contadores.keys() {
                 pintar_contador(&st, *g);
             }
-            st.visible.and_then(|v| st.filas_terminal.get(&v).map(|f| f.row.clone()))
+            st.visible
+                .and_then(|v| st.filas_terminal.get(&v).map(|f| f.row.clone()))
         };
         self.lista.select_row(visible.as_ref());
         self.st.borrow_mut().reconstruyendo = false;
     }
 
-    fn fila_grupo(self: &Rc<Self>, grupo: Grupo, nombre: &str, dir: Option<PathBuf>, colapsado: bool) -> gtk::ListBoxRow {
+    fn fila_grupo(
+        self: &Rc<Self>,
+        grupo: Grupo,
+        nombre: &str,
+        dir: Option<PathBuf>,
+        colapsado: bool,
+    ) -> gtk::ListBoxRow {
         let flecha = gtk::Label::new(Some(if colapsado { "▸" } else { "▾" }));
         flecha.add_css_class("dim-label");
         let titulo = gtk::Label::new(Some(nombre));
@@ -498,6 +607,10 @@ impl Ui {
         linea2.add_css_class("dim-label");
         linea2.add_css_class("caption");
 
+        let reanudacion = gtk::Image::from_icon_name("view-refresh-symbolic");
+        reanudacion.add_css_class("dim-label");
+        reanudacion.set_margin_end(6);
+
         let textos = gtk::Box::new(gtk::Orientation::Vertical, 0);
         textos.set_hexpand(true);
         textos.append(&linea1);
@@ -506,6 +619,7 @@ impl Ui {
         caja.set_margin_start(14);
         caja.append(&indicador);
         caja.append(&textos);
+        caja.append(&reanudacion);
 
         let row = gtk::ListBoxRow::new();
         row.set_child(Some(&caja));
@@ -528,6 +642,7 @@ impl Ui {
             indicador,
             linea1,
             linea2,
+            reanudacion,
         };
         pintar_fila(&f, t);
         f
@@ -539,8 +654,9 @@ impl Ui {
         menu.set_parent(row);
         menu.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
         let caja = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        let opciones: [(&str, AccionTerminal); 4] = [
+        let opciones: [(&str, AccionTerminal); 5] = [
             ("Renombrar…", |ui, id| ui.renombrar(id)),
+            ("Reanudación…", |ui, id| ui.editar_reanudacion(id)),
             ("Subir", |ui, id| ui.mover(id, -1)),
             ("Bajar", |ui, id| ui.mover(id, 1)),
             ("Cerrar", |ui, id| ui.cerrar_terminal(id)),
@@ -548,7 +664,9 @@ impl Ui {
         for (texto, f) in opciones {
             let b = gtk::Button::with_label(texto);
             b.add_css_class("flat");
-            b.child().and_downcast::<gtk::Label>().inspect(|l| l.set_xalign(0.0));
+            b.child()
+                .and_downcast::<gtk::Label>()
+                .inspect(|l| l.set_xalign(0.0));
             b.connect_clicked(glib::clone!(
                 #[weak(rename_to = ui)]
                 self,
@@ -573,47 +691,27 @@ impl Ui {
     // ---- Mostrar y Mirar ----
 
     fn mostrar(self: &Rc<Self>, id: TerminalId) {
-        let (grupo, t) = {
+        let grupo = {
             let st = self.st.borrow();
             let Some(t) = st.inst.terminales.iter().find(|t| t.id == id) else {
                 return;
             };
-            (t.proyecto, t.clone())
+            t.proyecto
         };
         // Si estaba en un Proyecto colapsado, desplegarlo.
         if self.st.borrow_mut().colapsados.remove(&grupo) {
             self.reconstruir_lista();
         }
 
-        let existente = self.st.borrow().vistas.get(&id).cloned();
-        let vista = match existente {
-            Some(v) => v,
-            None => {
-                let (cols, rows) = self.tam_estimado();
-                let v = Vista::nueva(
-                    id,
-                    &self.conexion,
-                    glib::clone!(
-                        #[weak(rename_to = ui)]
-                        self,
-                        move || ui.cerrar_terminal(id)
-                    ),
-                );
-                v.actualizar(&t);
-                self.pila.add_named(&v.raiz, Some(&format!("t{id}")));
-                v.tam_informado.set((cols, rows));
-                self.conexion.enviar(Pedido::Adjuntar {
-                    id,
-                    cols: cols as u16,
-                    rows: rows as u16,
-                });
-                self.st.borrow_mut().vistas.insert(id, v.clone());
-                v
-            }
+        {
+            let mut st = self.st.borrow_mut();
+            st.visible = Some(id);
+            st.principal = Some(id);
+        }
+        self.componer();
+        let Some(vista) = self.st.borrow().vistas.get(&id).cloned() else {
+            return;
         };
-
-        self.st.borrow_mut().visible = Some(id);
-        self.pila.set_visible_child(&vista.raiz);
         vista.term.grab_focus();
         // Un clic en el sidebar le devuelve el foco a la fila al terminar de
         // procesarse; recuperarlo después para que el teclado vaya a la Terminal.
@@ -622,13 +720,205 @@ impl Ui {
             term.grab_focus();
         });
 
-        let fila = self.st.borrow().filas_terminal.get(&id).map(|f| f.row.clone());
+        self.seleccionar_fila(id);
+        self.actualizar_mirando();
+    }
+
+    fn seleccionar_fila(&self, id: TerminalId) {
+        let fila = self
+            .st
+            .borrow()
+            .filas_terminal
+            .get(&id)
+            .map(|f| f.row.clone());
         if let Some(fila) = fila {
             self.st.borrow_mut().reconstruyendo = true;
             self.lista.select_row(Some(&fila));
             self.st.borrow_mut().reconstruyendo = false;
         }
+    }
+
+    /// La Vista de una Terminal, creándola (y adjuntándose al daemon) si hace falta.
+    fn vista_de(self: &Rc<Self>, id: TerminalId) -> Option<Rc<Vista>> {
+        if let Some(v) = self.st.borrow().vistas.get(&id) {
+            return Some(v.clone());
+        }
+        let t = self
+            .st
+            .borrow()
+            .inst
+            .terminales
+            .iter()
+            .find(|t| t.id == id)
+            .cloned()?;
+        let (cols, rows) = self.tam_estimado();
+        let v = Vista::nueva(
+            id,
+            &self.conexion,
+            glib::clone!(
+                #[weak(rename_to = ui)]
+                self,
+                move || ui.cerrar_terminal(id)
+            ),
+        );
+        v.actualizar(&t);
+        // Con varias en pantalla, hacer clic en una la enfoca y pasa a ser la Mirada.
+        let foco = gtk::EventControllerFocus::new();
+        foco.connect_enter(glib::clone!(
+            #[weak(rename_to = ui)]
+            self,
+            move |_| ui.enfocada(id)
+        ));
+        v.term.add_controller(foco);
+        v.tam_informado.set((cols, rows));
+        self.conexion.enviar(Pedido::Adjuntar {
+            id,
+            cols: cols as u16,
+            rows: rows as u16,
+        });
+        self.st.borrow_mut().vistas.insert(id, v.clone());
+        Some(v)
+    }
+
+    /// El foco del teclado entró en una Terminal del área.
+    fn enfocada(&self, id: TerminalId) {
+        if self.st.borrow().visible == Some(id) {
+            return;
+        }
+        self.st.borrow_mut().visible = Some(id);
+        self.seleccionar_fila(id);
+        self.marcar_enfocada();
         self.actualizar_mirando();
+    }
+
+    fn grupo_visible(&self) -> Option<Grupo> {
+        let st = self.st.borrow();
+        let v = st.visible?;
+        st.inst
+            .terminales
+            .iter()
+            .find(|t| t.id == v)
+            .map(|t| t.proyecto)
+    }
+
+    fn disposicion_actual(&self) -> Disposicion {
+        let Some(g) = self.grupo_visible() else {
+            return Disposicion::Una;
+        };
+        self.st
+            .borrow()
+            .disposiciones
+            .get(&g)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// Cambia la disposición del grupo visible y la aplica a sus Terminales abiertas.
+    fn fijar_disposicion(self: &Rc<Self>, d: Disposicion) {
+        let Some(g) = self.grupo_visible() else {
+            return;
+        };
+        {
+            let mut st = self.st.borrow_mut();
+            st.disposiciones.insert(g, d);
+            st.principal = st.visible;
+        }
+        self.componer();
+        if let Some(v) = self.vista_visible() {
+            v.term.grab_focus();
+        }
+    }
+
+    /// Arma el área según la disposición del grupo visible. No hace nada si ya está armada así.
+    fn componer(self: &Rc<Self>) {
+        let deseado = {
+            let st = self.st.borrow();
+            st.visible
+                .and_then(|v| st.inst.terminales.iter().find(|t| t.id == v))
+                .map(|t| {
+                    let d = st
+                        .disposiciones
+                        .get(&t.proyecto)
+                        .copied()
+                        .unwrap_or_default();
+                    let mut ids: Vec<TerminalId> = match d {
+                        Disposicion::Una => vec![t.id],
+                        _ => st
+                            .inst
+                            .terminales
+                            .iter()
+                            .filter(|o| o.proyecto == t.proyecto)
+                            .map(|o| o.id)
+                            .collect(),
+                    };
+                    if d == Disposicion::Principal {
+                        let p = st.principal.filter(|p| ids.contains(p)).unwrap_or(t.id);
+                        ids.retain(|&i| i != p);
+                        ids.insert(0, p);
+                    }
+                    (d, ids)
+                })
+        };
+        self.sincronizar_accion();
+
+        let Some((d, ids)) = deseado else {
+            self.st.borrow_mut().compuesto = None;
+            self.pila.set_visible_child_name("vacio");
+            return;
+        };
+        if self.st.borrow().compuesto.as_ref() == Some(&(d, ids.clone())) {
+            self.marcar_enfocada();
+            return;
+        }
+
+        let vistas: Vec<Rc<Vista>> = ids.iter().filter_map(|&id| self.vista_de(id)).collect();
+        let todas: Vec<Rc<Vista>> = self.st.borrow().vistas.values().cloned().collect();
+        for v in &todas {
+            soltar(v.raiz.upcast_ref());
+        }
+        while let Some(h) = self.area.first_child() {
+            self.area.remove(&h);
+        }
+        // Con una sola Terminal no hay nada que acomodar.
+        let efectiva = if vistas.len() > 1 {
+            d
+        } else {
+            Disposicion::Una
+        };
+        for v in &todas {
+            v.cabecera.set_visible(efectiva != Disposicion::Una);
+        }
+        if let Some(w) = armar(efectiva, &vistas, self.area.width()) {
+            self.area.append(&w);
+        }
+        self.pila.set_visible_child_name("area");
+        self.st.borrow_mut().compuesto = Some((d, ids));
+        self.marcar_enfocada();
+    }
+
+    /// Resalta la Terminal con el foco cuando hay varias en pantalla.
+    fn marcar_enfocada(&self) {
+        let st = self.st.borrow();
+        for (id, v) in &st.vistas {
+            if Some(*id) == st.visible {
+                v.raiz.add_css_class("enfocada");
+            } else {
+                v.raiz.remove_css_class("enfocada");
+            }
+        }
+    }
+
+    /// El menú de disposición refleja la del grupo visible.
+    fn sincronizar_accion(&self) {
+        let Some(a) = self
+            .ventana
+            .lookup_action("disposicion")
+            .and_downcast::<gio::SimpleAction>()
+        else {
+            return;
+        };
+        a.set_enabled(self.st.borrow().visible.is_some());
+        a.set_state(&self.disposicion_actual().id().to_variant());
     }
 
     fn actualizar_mirando(&self) {
@@ -650,19 +940,27 @@ impl Ui {
         st.vistas.get(&st.visible?).cloned()
     }
 
+    /// Informa el tamaño de cada Terminal en pantalla (puede haber varias).
     fn informar_tamano(&self) {
-        let (Some(id), Some(v)) = (self.st.borrow().visible, self.vista_visible()) else {
-            return;
-        };
-        if let Some(tam) = v.tam()
-            && tam != v.tam_informado.get()
-        {
-            v.tam_informado.set(tam);
-            self.conexion.enviar(Pedido::Redimensionar {
-                id,
-                cols: tam.0 as u16,
-                rows: tam.1 as u16,
-            });
+        let en_pantalla: Vec<(TerminalId, Rc<Vista>)> = self
+            .st
+            .borrow()
+            .vistas
+            .iter()
+            .filter(|(_, v)| v.raiz.is_mapped())
+            .map(|(id, v)| (*id, v.clone()))
+            .collect();
+        for (id, v) in en_pantalla {
+            if let Some(tam) = v.tam()
+                && tam != v.tam_informado.get()
+            {
+                v.tam_informado.set(tam);
+                self.conexion.enviar(Pedido::Redimensionar {
+                    id,
+                    cols: tam.0 as u16,
+                    rows: tam.1 as u16,
+                });
+            }
         }
     }
 
@@ -677,7 +975,13 @@ impl Ui {
         let st = self.st.borrow();
         let grupos = st.inst.proyectos.iter().map(|p| Some(p.id)).chain([None]);
         grupos
-            .flat_map(|g| st.inst.terminales.iter().filter(move |t| t.proyecto == g).cloned())
+            .flat_map(|g| {
+                st.inst
+                    .terminales
+                    .iter()
+                    .filter(move |t| t.proyecto == g)
+                    .cloned()
+            })
             .collect()
     }
 
@@ -705,7 +1009,11 @@ impl Ui {
         if orden.is_empty() {
             return;
         }
-        let actual = self.st.borrow().visible.and_then(|v| orden.iter().position(|t| t.id == v));
+        let actual = self
+            .st
+            .borrow()
+            .visible
+            .and_then(|v| orden.iter().position(|t| t.id == v));
         let n = orden.len() as isize;
         let i = match actual {
             Some(i) => (i as isize + delta).rem_euclid(n),
@@ -802,7 +1110,12 @@ impl Ui {
             let Some(p) = st.inst.proyectos.iter().find(|p| p.id == id) else {
                 return;
             };
-            let n = st.inst.terminales.iter().filter(|t| t.proyecto == Some(id)).count();
+            let n = st
+                .inst
+                .terminales
+                .iter()
+                .filter(|t| t.proyecto == Some(id))
+                .count();
             (p.nombre.clone(), n)
         };
         let detalle = match n {
@@ -822,7 +1135,15 @@ impl Ui {
 
     /// T6/T7: cerrar una viva pide confirmación; una Terminada no.
     fn cerrar_terminal(self: &Rc<Self>, id: TerminalId) {
-        let Some(t) = self.st.borrow().inst.terminales.iter().find(|t| t.id == id).cloned() else {
+        let Some(t) = self
+            .st
+            .borrow()
+            .inst
+            .terminales
+            .iter()
+            .find(|t| t.id == id)
+            .cloned()
+        else {
             return;
         };
         if matches!(t.estado, Estado::Terminada { .. }) {
@@ -860,6 +1181,33 @@ impl Ui {
                 c.enviar(Pedido::RenombrarTerminal {
                     id,
                     nombre: Some(nombre).filter(|n| !n.is_empty()),
+                })
+            },
+        );
+    }
+
+    /// R4: ver o corregir a mano la Reanudación.
+    fn editar_reanudacion(self: &Rc<Self>, id: TerminalId) {
+        let actual = self
+            .st
+            .borrow()
+            .inst
+            .terminales
+            .iter()
+            .find(|t| t.id == id)
+            .and_then(|t| t.reanudacion.clone())
+            .unwrap_or_default();
+        let c = self.conexion.clone();
+        dialogos::pedir_texto(
+            &self.ventana,
+            "Reanudación",
+            "Comando que se escribe al reabrir la Terminal tras un reinicio (vacío para no reanudar)",
+            &actual,
+            "Guardar",
+            move |comando| {
+                c.enviar(Pedido::FijarReanudacion {
+                    id,
+                    comando: Some(comando).filter(|c| !c.is_empty()),
                 })
             },
         );
@@ -914,7 +1262,59 @@ impl Ui {
     }
 }
 
-fn rotulo(t: &Terminal) -> String {
+/// Saca un widget de su contenedor (solo usamos `Box` y `Paned` en el área).
+fn soltar(w: &gtk::Widget) {
+    let Some(padre) = w.parent() else { return };
+    if let Some(b) = padre.downcast_ref::<gtk::Box>() {
+        b.remove(w);
+    } else if let Some(p) = padre.downcast_ref::<gtk::Paned>() {
+        if p.start_child().as_ref() == Some(w) {
+            p.set_start_child(None::<&gtk::Widget>);
+        } else {
+            p.set_end_child(None::<&gtk::Widget>);
+        }
+    } else {
+        w.unparent();
+    }
+}
+
+/// El árbol de widgets que acomoda las Vistas según la disposición.
+fn armar(d: Disposicion, vistas: &[Rc<Vista>], ancho: i32) -> Option<gtk::Widget> {
+    let caja = |o: gtk::Orientation, hijos: &[gtk::Widget]| -> gtk::Widget {
+        let b = gtk::Box::new(o, 2);
+        b.set_homogeneous(true);
+        for h in hijos {
+            b.append(h);
+        }
+        b.upcast()
+    };
+    let raices: Vec<gtk::Widget> = vistas.iter().map(|v| v.raiz.clone().upcast()).collect();
+    let primera = raices.first()?.clone();
+    Some(match d {
+        Disposicion::Una => primera,
+        Disposicion::Columnas => caja(gtk::Orientation::Horizontal, &raices),
+        Disposicion::Filas => caja(gtk::Orientation::Vertical, &raices),
+        Disposicion::Mosaico => {
+            let cols = (raices.len() as f64).sqrt().ceil() as usize;
+            let filas: Vec<gtk::Widget> = raices
+                .chunks(cols)
+                .map(|c| caja(gtk::Orientation::Horizontal, c))
+                .collect();
+            caja(gtk::Orientation::Vertical, &filas)
+        }
+        Disposicion::Principal => {
+            let p = gtk::Paned::new(gtk::Orientation::Horizontal);
+            p.set_start_child(Some(&primera));
+            p.set_end_child(Some(&caja(gtk::Orientation::Vertical, &raices[1..])));
+            if ancho > 0 {
+                p.set_position(ancho * 2 / 3);
+            }
+            p.upcast()
+        }
+    })
+}
+
+pub(crate) fn rotulo(t: &Terminal) -> String {
     t.nombre
         .clone()
         .or_else(|| t.titulo.clone())
@@ -942,11 +1342,24 @@ fn pintar_fila(f: &FilaTerminal, t: &Terminal) {
     };
     if let Estado::Terminada { codigo } = t.estado {
         let fin = format!("código {codigo}");
-        l2 = if l2.is_empty() { fin } else { format!("{fin} · {l2}") };
+        l2 = if l2.is_empty() {
+            fin
+        } else {
+            format!("{fin} · {l2}")
+        };
     }
     f.linea1.set_text(&l1);
     f.linea2.set_text(&l2);
     f.linea2.set_visible(!l2.is_empty());
+
+    match &t.reanudacion {
+        Some(r) => {
+            f.reanudacion
+                .set_tooltip_text(Some(&format!("Al reabrir se reanuda con:\n{r}")));
+            f.reanudacion.set_visible(true);
+        }
+        None => f.reanudacion.set_visible(false),
+    }
 
     let destacada = t.estado == Estado::PideAtencion || t.terminada_sin_mirar;
     if destacada {
@@ -963,12 +1376,16 @@ fn pintar_fila(f: &FilaTerminal, t: &Terminal) {
 
 /// I4: en un grupo colapsado, cuántas Piden atención o están Terminadas sin mirar.
 fn pintar_contador(st: &Estado_, grupo: Grupo) {
-    let Some(c) = st.contadores.get(&grupo) else { return };
+    let Some(c) = st.contadores.get(&grupo) else {
+        return;
+    };
     let n = st
         .inst
         .terminales
         .iter()
-        .filter(|t| t.proyecto == grupo && (t.estado == Estado::PideAtencion || t.terminada_sin_mirar))
+        .filter(|t| {
+            t.proyecto == grupo && (t.estado == Estado::PideAtencion || t.terminada_sin_mirar)
+        })
         .count();
     c.set_text(&n.to_string());
     c.set_visible(n > 0 && st.colapsados.contains(&grupo));
@@ -978,6 +1395,10 @@ fn cargar_css() {
     let css = gtk::CssProvider::new();
     css.load_from_string(include_str!("estilo.css"));
     if let Some(display) = gtk::gdk::Display::default() {
-        gtk::style_context_add_provider_for_display(&display, &css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &css,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
     }
 }

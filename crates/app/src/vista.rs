@@ -16,12 +16,18 @@ pub struct Vista {
     pub term: vte::Terminal,
     barra: gtk::Box,
     barra_texto: gtk::Label,
+    /// Rótulo de la Terminal; solo se ve cuando comparte la ventana con otras.
+    pub cabecera: gtk::Label,
     /// Último tamaño (cols, rows) que le informamos al daemon.
     pub tam_informado: Cell<(i64, i64)>,
 }
 
 impl Vista {
-    pub fn nueva(id: TerminalId, conexion: &Rc<Conexion>, al_cerrar: impl Fn() + 'static) -> Rc<Vista> {
+    pub fn nueva(
+        id: TerminalId,
+        conexion: &Rc<Conexion>,
+        al_cerrar: impl Fn() + 'static,
+    ) -> Rc<Vista> {
         let term = vte::Terminal::new();
         term.set_hexpand(true);
         term.set_vexpand(true);
@@ -53,12 +59,21 @@ impl Vista {
         barra.append(&cerrar);
         barra.set_visible(false);
 
-        let barra_desplazamiento = gtk::Scrollbar::new(gtk::Orientation::Vertical, term.vadjustment().as_ref());
+        let barra_desplazamiento =
+            gtk::Scrollbar::new(gtk::Orientation::Vertical, term.vadjustment().as_ref());
         let fila = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         fila.append(&term);
         fila.append(&barra_desplazamiento);
 
+        let cabecera = gtk::Label::new(None);
+        cabecera.set_xalign(0.0);
+        cabecera.set_ellipsize(pango::EllipsizeMode::End);
+        cabecera.add_css_class("cabecera");
+        cabecera.set_visible(false);
+
         let raiz = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        raiz.add_css_class("vista");
+        raiz.append(&cabecera);
         raiz.append(&barra);
         raiz.append(&fila);
 
@@ -67,14 +82,17 @@ impl Vista {
             term,
             barra,
             barra_texto,
+            cabecera,
             tam_informado: Cell::new((0, 0)),
         })
     }
 
     pub fn actualizar(&self, t: &Terminal) {
+        self.cabecera.set_text(&crate::ui::rotulo(t));
         match t.estado {
             Estado::Terminada { codigo } => {
-                self.barra_texto.set_text(&format!("Terminada · código de salida {codigo}"));
+                self.barra_texto
+                    .set_text(&format!("Terminada · código de salida {codigo}"));
                 self.barra.set_visible(true);
                 self.term.set_input_enabled(false);
             }
@@ -96,14 +114,18 @@ impl Vista {
 fn fuente_monoespaciada() -> Option<String> {
     const ESQUEMA: &str = "org.gnome.desktop.interface";
     gio::SettingsSchemaSource::default()?.lookup(ESQUEMA, true)?;
-    Some(gio::Settings::new(ESQUEMA).string("monospace-font-name").to_string())
+    Some(
+        gio::Settings::new(ESQUEMA)
+            .string("monospace-font-name")
+            .to_string(),
+    )
 }
 
 fn aplicar_paleta(term: &vte::Terminal) {
     let rgba = |s: &str| gdk::RGBA::parse(s).expect("color válido");
     let paleta: Vec<gdk::RGBA> = [
-        "#171421", "#c01c28", "#26a269", "#a2734c", "#12488b", "#a347ba", "#2aa1b3", "#d0cfcc", "#5e5c64",
-        "#f66151", "#33d17a", "#e9ad0c", "#2a7bde", "#c061cb", "#33c7de", "#ffffff",
+        "#171421", "#c01c28", "#26a269", "#a2734c", "#12488b", "#a347ba", "#2aa1b3", "#d0cfcc",
+        "#5e5c64", "#f66151", "#33d17a", "#e9ad0c", "#2a7bde", "#c061cb", "#33c7de", "#ffffff",
     ]
     .into_iter()
     .map(rgba)

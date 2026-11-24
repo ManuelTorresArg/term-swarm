@@ -42,7 +42,10 @@ impl Conexion {
         al_cerrar: impl FnOnce() + 'static,
     ) {
         let (tx, rx) = async_channel::unbounded();
-        let Recepcion { previos, rx: rx_hilo } = r;
+        let Recepcion {
+            previos,
+            rx: rx_hilo,
+        } = r;
         thread::Builder::new()
             .name("swarm-puente".into())
             .spawn(move || {
@@ -66,7 +69,9 @@ impl Conexion {
                         let cb = yo.pendientes.borrow_mut().remove(&req);
                         match (cb, resultado) {
                             (Some(cb), r) => cb(r),
-                            (None, Err(e)) => eprintln!("swarm: el daemon respondió con error: {e}"),
+                            (None, Err(e)) => {
+                                eprintln!("swarm: el daemon respondió con error: {e}")
+                            }
                             (None, Ok(_)) => {}
                         }
                     }

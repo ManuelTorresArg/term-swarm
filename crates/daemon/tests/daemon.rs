@@ -357,3 +357,59 @@ fn la_estructura_sobrevive_al_apagado() {
         .unwrap();
     assert!(!segundo.success());
 }
+
+#[test]
+fn la_reanudacion_se_escribe_al_reabrir() {
+    let mut e = Entorno::nuevo("reanudacion");
+    let mut c = e.cliente();
+    let id = crear_terminal(&mut c, None);
+    let otra = crear_terminal(&mut c, None);
+    c.pedir(Pedido::FijarReanudacion {
+        id,
+        comando: Some(" echo reanudada-$((20+1)) ".into()),
+    })
+    .unwrap();
+    assert!(
+        c.pedir(Pedido::FijarReanudacion {
+            id: otra,
+            comando: Some("echo uno\necho dos".into()),
+        })
+        .is_err(),
+        "una sola línea"
+    );
+    // Crear una Terminal nueva no la usa: solo al reabrir (R1).
+    assert_eq!(estructura(&mut c).terminales[1].reanudacion, None);
+    drop(c);
+    e.apagar();
+
+    e.arrancar();
+    let mut c = e.cliente();
+    let i = estructura(&mut c);
+    assert_eq!(
+        i.terminales[0].reanudacion.as_deref(),
+        Some("echo reanudada-$((20+1))")
+    );
+    c.pedir(Pedido::Adjuntar {
+        id,
+        cols: 80,
+        rows: 24,
+    })
+    .unwrap();
+    let mut visto = Vec::new();
+    let limite = Instant::now() + ESPERA;
+    while !String::from_utf8_lossy(&visto).contains("reanudada-21") {
+        match c.proximo_evento(Some(limite.saturating_duration_since(Instant::now()))) {
+            Some(Evento::Salida { id: i, datos }) if i == id => visto.extend(datos),
+            Some(_) => {}
+            None => panic!(
+                "no se ejecutó la Reanudación: {:?}",
+                String::from_utf8_lossy(&visto)
+            ),
+        }
+    }
+
+    // Borrarla la saca de la Estructura (R4).
+    c.pedir(Pedido::FijarReanudacion { id, comando: None })
+        .unwrap();
+    assert_eq!(estructura(&mut c).terminales[0].reanudacion, None);
+}
