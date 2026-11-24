@@ -22,7 +22,10 @@ fn main() -> glib::ExitCode {
         .application_id(APP_ID)
         .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
         .build();
-    app.connect_startup(|_| gtk::Window::set_default_icon_name(APP_ID));
+    app.connect_startup(|app| {
+        gtk::Window::set_default_icon_name(APP_ID);
+        aplicar_tema(app);
+    });
     let ui: Rc<RefCell<Option<Rc<Ui>>>> = Rc::default();
 
     app.connect_command_line(move |app, linea| {
@@ -64,4 +67,35 @@ fn main() -> glib::ExitCode {
     });
 
     app.run()
+}
+
+/// Usa el tema interno de GTK y los íconos de Adwaita, siguiendo la
+/// preferencia clara/oscura del sistema, como las apps de GNOME. El tema GTK
+/// del usuario puede no tener variante oscura para GTK4 (p. ej. Greybird con
+/// `prefer-dark`), y eso deja texto e íconos claros sobre fondos claros.
+fn aplicar_tema(app: &gtk::Application) {
+    let Some(ajustes) = gtk::Settings::default() else {
+        return;
+    };
+    ajustes.set_gtk_theme_name(Some("Default"));
+    ajustes.set_gtk_icon_theme_name(Some("Adwaita"));
+
+    const ESQUEMA: &str = "org.gnome.desktop.interface";
+    let hay_esquema = gio::SettingsSchemaSource::default()
+        .and_then(|s| s.lookup(ESQUEMA, true))
+        .is_some();
+    if !hay_esquema {
+        return;
+    }
+    let sistema = gio::Settings::new(ESQUEMA);
+    #[allow(deprecated)] // gtk-interface-color-scheme recién existe desde GTK 4.20
+    let seguir = move |s: &gio::Settings| {
+        ajustes.set_gtk_application_prefer_dark_theme(s.string("color-scheme") == "prefer-dark");
+    };
+    seguir(&sistema);
+    sistema.connect_changed(Some("color-scheme"), move |s, _| seguir(s));
+    // Mantener vivo el objeto para seguir recibiendo cambios.
+    app.connect_shutdown(move |_| {
+        let _ = &sistema;
+    });
 }
